@@ -1,5 +1,5 @@
 # Sliverer
-runs sliver command on all hosts, partially based on example in sliver repo
+runs sliver command on all hosts, partially (or for run on new basically entirely) based on example in sliver repo
 
 
 to install 
