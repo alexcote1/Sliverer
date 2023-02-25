@@ -27,6 +27,16 @@ func makeRequest(session *clientpb.Session) *commonpb.Request {
 		Timeout:   timeout,
 	}
 }
+func makeBeaconRequest(beacon *clientpb.Beacon) *commonpb.Request {
+	if beacon == nil {
+		return nil
+	}
+	timeout := int64(60)
+	return &commonpb.Request{
+		SessionID: beacon.ID,
+		Timeout:   timeout,
+	}
+}
 func main() {
 	var configPath string
 	var command string
@@ -80,6 +90,34 @@ func runcommandonall(rpc rpcpb.SliverRPCClient, command string) {
 			runcommandon(rpc, command, agents.Sessions[i])
 		}
 	}
+	beacons, err := rpc.GetBeacons(context.Background(), &commonpb.Empty{})
+	if err != nil {
+		log.Fatal(err)
+	}
+	for i := 0; i < len(beacons.Beacons); i++ {
+		//print(&agents.Sessions[i])
+		if beacons.Beacons[i].IsDead == true {
+			println(beacons.Beacons[i].Hostname + " is dead")
+		} else {
+			//println(i)
+			runcommandonbeacon(rpc, command, beacons.Beacons[i])
+		}
+	}
+}
+
+func runcommandonbeacon(rpc rpcpb.SliverRPCClient, command string, agent *clientpb.Beacon) {
+
+	resp, err := rpc.Execute(context.Background(), &sliverpb.ExecuteReq{
+		Path:    command,
+		Output:  true,
+		Request: makeBeaconRequest(agent),
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	println(agent.Hostname)
+	println(string(resp.Stdout) + string(resp.Stderr))
+
 }
 func runcommandon(rpc rpcpb.SliverRPCClient, command string, agent *clientpb.Session) {
 	resp, err := rpc.Execute(context.Background(), &sliverpb.ExecuteReq{
@@ -115,6 +153,11 @@ func runcommandonnew(rpc rpcpb.SliverRPCClient, command string) {
 			// call any RPC you want, for the full list, see
 			// https://github.com/BishopFox/sliver/blob/master/protobuf/rpcpb/services.proto
 			runcommandon(rpc, command, session)
+			//beacon fields not extracted so cannot impliment
+			// case consts.BeaconRegisteredEvent:
+			// 	beacon := event.Data
+			// 	print(beacon)
+			// 	runcommandonbeacon(rpc, command, clientpb.Beacon(beacon))
 		}
 	}
 }
