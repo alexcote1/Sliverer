@@ -33,8 +33,9 @@ func makeBeaconRequest(beacon *clientpb.Beacon) *commonpb.Request {
 	}
 	timeout := int64(60)
 	return &commonpb.Request{
-		SessionID: beacon.ID,
-		Timeout:   timeout,
+		BeaconID: beacon.ID,
+		Timeout:  timeout,
+		Async:    true,
 	}
 }
 func main() {
@@ -107,13 +108,23 @@ func runcommandonall(rpc rpcpb.SliverRPCClient, command string) {
 
 func runcommandonbeacon(rpc rpcpb.SliverRPCClient, command string, agent *clientpb.Beacon) {
 
+	// sess, err := rpc.OpenSession(context.Background(), &sliverpb.OpenSession{
+	// 	Request: makeBeaconRequest(agent),
+	// 	C2S:     []string{},
+	// })
+	// print(sess)
+	// if err != nil {
+	// 	log.Print(err)
+	// 	return
+	// }
 	resp, err := rpc.Execute(context.Background(), &sliverpb.ExecuteReq{
-		Path:    command,
-		Output:  true,
+		Path: command,
+		//Output:  true,
 		Request: makeBeaconRequest(agent),
 	})
 	if err != nil {
-		log.Fatal(err)
+		log.Print(err)
+		return
 	}
 	println(agent.Hostname)
 	println(string(resp.Stdout) + string(resp.Stderr))
