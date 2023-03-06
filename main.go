@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/bishopfox/sliver/client/assets"
 	consts "github.com/bishopfox/sliver/client/constants"
@@ -42,10 +43,14 @@ func main() {
 	var configPath string
 	var command string
 	var runonnew bool
+	var argss string
 	flag.StringVar(&configPath, "config", "", "path to sliver client config file")
 	flag.StringVar(&command, "command", "", "command to run")
+	flag.StringVar(&argss, "args", "", "command args")
 	flag.BoolVar(&runonnew, "runonnew", false, "weather or not to run on all new agents, hangs by default")
 	flag.Parse()
+	var args []string
+	args = strings.Split(argss, "^")
 	if configPath == "" {
 		println("no config is provided --config would work, but attempting to guess based on whats in ~/.sliver-client/configs/")
 		files, err := ioutil.ReadDir(os.Getenv("HOME") + "/.sliver-client/configs/")
@@ -70,13 +75,13 @@ func main() {
 	defer ln.Close()
 	//command = "ls"
 	if runonnew != true {
-		runcommandonall(rpc, command)
+		runcommandonall(rpc, command, args)
 	} else {
-		runcommandonnew(rpc, command)
+		runcommandonnew(rpc, command, args)
 	}
 
 }
-func runcommandonall(rpc rpcpb.SliverRPCClient, command string) {
+func runcommandonall(rpc rpcpb.SliverRPCClient, command string, args []string) {
 	agents, err := rpc.GetSessions(context.Background(), &commonpb.Empty{})
 	if err != nil {
 		log.Fatal(err)
@@ -88,7 +93,7 @@ func runcommandonall(rpc rpcpb.SliverRPCClient, command string) {
 			println(agents.Sessions[i].Hostname + " is dead")
 		} else {
 			//println(i)
-			runcommandon(rpc, command, agents.Sessions[i])
+			runcommandon(rpc, command, agents.Sessions[i], args)
 		}
 	}
 	beacons, err := rpc.GetBeacons(context.Background(), &commonpb.Empty{})
@@ -101,12 +106,12 @@ func runcommandonall(rpc rpcpb.SliverRPCClient, command string) {
 			println(beacons.Beacons[i].Hostname + " is dead")
 		} else {
 			//println(i)
-			runcommandonbeacon(rpc, command, beacons.Beacons[i])
+			runcommandonbeacon(rpc, command, beacons.Beacons[i], args)
 		}
 	}
 }
 
-func runcommandonbeacon(rpc rpcpb.SliverRPCClient, command string, agent *clientpb.Beacon) {
+func runcommandonbeacon(rpc rpcpb.SliverRPCClient, command string, agent *clientpb.Beacon, args []string) {
 
 	// sess, err := rpc.OpenSession(context.Background(), &sliverpb.OpenSession{
 	// 	Request: makeBeaconRequest(agent),
@@ -130,19 +135,21 @@ func runcommandonbeacon(rpc rpcpb.SliverRPCClient, command string, agent *client
 	println(string(resp.Stdout) + string(resp.Stderr))
 
 }
-func runcommandon(rpc rpcpb.SliverRPCClient, command string, agent *clientpb.Session) {
+func runcommandon(rpc rpcpb.SliverRPCClient, command string, agent *clientpb.Session, args []string) {
 	resp, err := rpc.Execute(context.Background(), &sliverpb.ExecuteReq{
 		Path:    command,
 		Output:  true,
 		Request: makeRequest(agent),
+		Args:    args,
 	})
 	if err != nil {
-		log.Fatal(err)
+		log.Print(err)
+		return
 	}
 	println(agent.Hostname)
 	println(string(resp.Stdout) + string(resp.Stderr))
 }
-func runcommandonnew(rpc rpcpb.SliverRPCClient, command string) {
+func runcommandonnew(rpc rpcpb.SliverRPCClient, command string, args []string) {
 	// Open the event stream to be able to collect all events sent by  the server
 	eventStream, err := rpc.Events(context.Background(), &commonpb.Empty{})
 	if err != nil {
@@ -163,7 +170,7 @@ func runcommandonnew(rpc rpcpb.SliverRPCClient, command string) {
 			session := event.Session
 			// call any RPC you want, for the full list, see
 			// https://github.com/BishopFox/sliver/blob/master/protobuf/rpcpb/services.proto
-			runcommandon(rpc, command, session)
+			runcommandon(rpc, command, session, args)
 			//beacon fields not extracted so cannot impliment
 			// case consts.BeaconRegisteredEvent:
 			// 	beacon := event.Data
