@@ -1,6 +1,7 @@
 package main
 
 import (
+	"container/list"
 	"context"
 	"flag"
 	"io"
@@ -8,6 +9,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/bishopfox/sliver/client/assets"
 	consts "github.com/bishopfox/sliver/client/constants"
@@ -17,6 +19,11 @@ import (
 	"github.com/bishopfox/sliver/protobuf/rpcpb"
 	"github.com/bishopfox/sliver/protobuf/sliverpb"
 )
+
+type task struct {
+	taskid string
+	beacon *clientpb.Beacon
+}
 
 func makeRequest(session *clientpb.Session) *commonpb.Request {
 	if session == nil {
@@ -100,18 +107,53 @@ func runcommandonall(rpc rpcpb.SliverRPCClient, command string, args []string) {
 	if err != nil {
 		log.Fatal(err)
 	}
+	taskids := list.New()
 	for i := 0; i < len(beacons.Beacons); i++ {
 		//print(&agents.Sessions[i])
 		if beacons.Beacons[i].IsDead == true {
 			println(beacons.Beacons[i].Hostname + " is dead")
 		} else {
 			//println(i)
-			runcommandonbeacon(rpc, command, beacons.Beacons[i], args)
+			taskids.PushFront(runcommandonbeacon(rpc, command, beacons.Beacons[i], args))
 		}
+	}
+	for i := 0; i < 100; i++ {
+		if taskids.Front() == nil {
+			continue
+		}
+		time.Sleep(10 * time.Second)
+		for i := taskids.Front(); i != nil; i = i.Next() {
+			tasks, err := rpc.GetBeaconTasks(context.Background(), (i.Value).(task).beacon)
+			if err != nil {
+				log.Print(err)
+			}
+			for j := 0; j < len(tasks.Tasks); j++ {
+				if tasks.Tasks[j].State == "completed" {
+					if tasks.Tasks[j].ID == (i.Value).(task).taskid {
+						resp, err := rpc.GetBeaconTaskContent(context.Background(), tasks.Tasks[j])
+						if err != nil {
+							log.Print(err)
+						}
+						taskids.Remove(i)
+						println((i.Value).(task).beacon.Name + "," + (i.Value).(task).beacon.Hostname)
+						println(string(resp.Response))
+					}
+				}
+			}
+
+		}
+	}
+	for i := taskids.Front(); i != nil; i = i.Next() {
+		println("didnt hear from " + (i.Value).(task).beacon.Name + "," + (i.Value).(task).beacon.Hostname)
 	}
 }
 
-func runcommandonbeacon(rpc rpcpb.SliverRPCClient, command string, agent *clientpb.Beacon, args []string) {
+func isin(heardfrom *list.List, beacon *clientpb.Beacon) bool {
+
+	return false
+}
+
+func runcommandonbeacon(rpc rpcpb.SliverRPCClient, command string, agent *clientpb.Beacon, args []string) task {
 
 	// sess, err := rpc.OpenSession(context.Background(), &sliverpb.OpenSession{
 	// 	Request: makeBeaconRequest(agent),
@@ -123,16 +165,19 @@ func runcommandonbeacon(rpc rpcpb.SliverRPCClient, command string, agent *client
 	// 	return
 	// }
 	resp, err := rpc.Execute(context.Background(), &sliverpb.ExecuteReq{
-		Path: command,
-		//Output:  true,
+		Path:    command,
+		Output:  true,
 		Request: makeBeaconRequest(agent),
 	})
 	if err != nil {
 		log.Print(err)
-		return
+		return task{"err", agent}
+
 	}
-	println(agent.Hostname)
-	println(string(resp.Stdout) + string(resp.Stderr))
+
+	println("Beacon:" + agent.Hostname)
+	println("going to check back in with this beacon")
+	return task{resp.Response.TaskID, agent}
 
 }
 func runcommandon(rpc rpcpb.SliverRPCClient, command string, agent *clientpb.Session, args []string) {
@@ -146,7 +191,7 @@ func runcommandon(rpc rpcpb.SliverRPCClient, command string, agent *clientpb.Ses
 		log.Print(err)
 		return
 	}
-	println(agent.Hostname)
+	println("Session:" + agent.Hostname)
 	println(string(resp.Stdout) + string(resp.Stderr))
 }
 func runcommandonnew(rpc rpcpb.SliverRPCClient, command string, args []string) {
