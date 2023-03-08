@@ -106,9 +106,9 @@ func main() {
 		getbeacons(rpc)
 	} else if listsessions == true {
 		getSessions(rpc)
-	} else if len(sessions) > 0 {
+	} else if sessionss != "" {
 		runcommandonsessionlist(rpc, command, args, sessions)
-	} else if len(hosts) > 0 {
+	} else if hostss != "" {
 		runcommandonbeaconlist(rpc, command, args, hosts)
 	} else {
 		runcommandonall(rpc, command, args)
