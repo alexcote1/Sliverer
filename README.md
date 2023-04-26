@@ -8,11 +8,11 @@ go get github.com/alexcote1/Sliverer
 ```
 to run 
 ```
-Sliverer --command="ls" --runonnew=true
+Sliverer command --command="ls" --runonnew=true
 ```
 or 
 ```
-Sliverer --command="ls" 
+Sliverer command --command="ls" 
 ```
 if you need to specify a config specify its path with 
 ```
