@@ -30,8 +30,7 @@ type PwnBoard struct {
 	Type string `json:"type"`
 }
 
-func updatepwnBoard(ip string) {
-	url := os.Getenv("pwnboard")
+func updatepwnBoard(ip string, url string) {
 	if url == "" {
 		url = "http://127.0.0.1"
 	}
@@ -87,78 +86,91 @@ func makeBeaconRequest(beacon *clientpb.Beacon) *commonpb.Request {
 }
 
 func main() {
-	var configPath string
-	var command string
-	var runonnew bool
-	var argss string
-	var rename bool
-	var listbeacons bool
-	var hostss string
-	var sessionss string
-	var listsessions bool
-	var pwnboard bool
-	flag.StringVar(&configPath, "config", "", "path to sliver client config file")
-	flag.StringVar(&command, "command", "", "command to run")
-	flag.StringVar(&argss, "args", "", "command args")
-	flag.BoolVar(&runonnew, "runonnew", false, "weather or not to run on all new agents, hangs by default")
-	flag.BoolVar(&rename, "rename", false, "run a rename operation")
-	flag.BoolVar(&listbeacons, "listbeacons", false, "get a list of all beacon names")
-	flag.StringVar(&hostss, "beacons", "", "runs command on list of beacons")
-	flag.StringVar(&sessionss, "sessions", "", "runs command on list of sessions")
-	flag.BoolVar(&listsessions, "listsessions", false, "get a list of all sessions names")
-	flag.BoolVar(&pwnboard, "pwnboard", false, "push to pwn board, populate the pwnboard env var if you dont want to send to localhost")
-	flag.Parse()
-	var args []string
-	var hosts []string
-	var sessions []string
-	args = strings.Split(argss, "^")
-	hosts = strings.Split(hostss, " ")
-	sessions = strings.Split(sessionss, " ")
+	var configPath, argsStr, hostsStr, sessionsStr, pwnboardurl, command string
+	fs := flag.NewFlagSet("fs", flag.ContinueOnError)
+	fs.StringVar(&configPath, "command", "", "command to run")
+	fs.StringVar(&configPath, "config", "", "path to sliver client config file")
+	fs.StringVar(&argsStr, "args", "", "command args")
+	fs.StringVar(&hostsStr, "beacons", "", "runs command on list of beacons")
+	fs.StringVar(&sessionsStr, "sessions", "", "runs command on list of sessions")
+	fs.StringVar(&pwnboardurl, "url", "", "pwnboard's url")
+	var cmdArgs []string
+	//allow for any postion.
+	subcommand := ""
+	for _, arg := range os.Args[1:] {
+		if !strings.HasPrefix(arg, "-") {
+			subcommand = arg
+
+		} else {
+			cmdArgs = append(cmdArgs, arg)
+		}
+	}
+	if err := fs.Parse(cmdArgs); err != nil {
+		fmt.Println("Error parsing flags:", err)
+		os.Exit(1)
+	}
+
+	args := strings.Split(argsStr, "^")
+	hosts := strings.Split(hostsStr, " ")
+	sessions := strings.Split(sessionsStr, " ")
+
 	if configPath == "" {
-		println("no config is provided --config would work, but attempting to guess based on whats in ~/.sliver-client/configs/")
+		println("No config is provided --config would work, but attempting to guess based on what's in ~/.sliver-client/configs/")
 		files, err := ioutil.ReadDir(os.Getenv("HOME") + "/.sliver-client/configs/")
 		if err != nil {
 			log.Fatal(err)
 		}
 		configPath = os.Getenv("HOME") + "/.sliver-client/configs/" + files[0].Name()
-
 	}
-	// load the client configuration from the filesystem
+
+	// Load the client configuration from the filesystem
 	config, err := assets.ReadConfig(configPath)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// connect to the server
+	// Connect to the server
 	rpc, ln, err := transport.MTLSConnect(config)
 	if err != nil {
 		log.Fatal(err)
 	}
 	log.Println("[*] Connected to sliver server")
 	defer ln.Close()
-	//command = "ls"
-	if pwnboard == true {
-		sendtopwnboard(rpc)
-	} else if rename == true {
-		renameall(rpc)
-	} else if runonnew == true {
-		runcommandonnew(rpc, command, args)
-	} else if listbeacons == true {
-		getbeacons(rpc)
-	} else if listsessions == true {
-		getSessions(rpc)
-	} else if sessionss != "" {
-		runcommandonsessionlist(rpc, command, args, sessions)
-	} else if hostss != "" {
-		runcommandonbeaconlist(rpc, command, args, hosts)
-	} else {
-		runcommandonall(rpc, command, args)
 
+	if len(os.Args) < 2 {
+		fmt.Println("Expected 'rename', 'pwnboard','command'")
+		os.Exit(1)
+	}
+	// subcommand := ""
+	// //filter non positional arguments from the command line
+	// for _, i := range os.Args {
+	// 	if !strings.Contains(i, "--") {
+	// 		subcommand = i
+	// 	}
+	// }
+
+	switch subcommand {
+	case "rename":
+		RenameAll(rpc)
+	case "pwnboard":
+		SendToPwnBoard(rpc, pwnboardurl)
+	case "command":
+		if command == "" {
+			fmt.Println("Expected 'command' with args")
+			return
+		}
+		if sessionsStr != "" {
+			RunCommandOnSessionList(rpc, command, args, sessions)
+		} else if hostsStr != "" {
+			RunCommandOnBeaconList(rpc, command, args, hosts)
+		} else {
+			RunCommandonAll(rpc, command, args)
+		}
 	}
 
 }
 
-func runcommandonsessionlist(rpc rpcpb.SliverRPCClient, command string, args []string, hosts []string) {
+func RunCommandOnSessionList(rpc rpcpb.SliverRPCClient, command string, args []string, hosts []string) {
 	sessions, err := rpc.GetSessions(context.Background(), &commonpb.Empty{})
 	if err != nil {
 		log.Fatal(err)
@@ -180,7 +192,7 @@ func runcommandonsessionlist(rpc rpcpb.SliverRPCClient, command string, args []s
 
 }
 
-func runcommandonbeaconlist(rpc rpcpb.SliverRPCClient, command string, args []string, hosts []string) {
+func RunCommandOnBeaconList(rpc rpcpb.SliverRPCClient, command string, args []string, hosts []string) {
 	beacons, err := rpc.GetBeacons(context.Background(), &commonpb.Empty{})
 	if err != nil {
 		log.Fatal(err)
@@ -210,7 +222,7 @@ func isinarray(hosts []string, host string) bool {
 
 }
 
-func getbeacons(rpc rpcpb.SliverRPCClient) {
+func GetBeacons(rpc rpcpb.SliverRPCClient) {
 
 	beacons, err := rpc.GetBeacons(context.Background(), &commonpb.Empty{})
 	if err != nil {
@@ -221,7 +233,7 @@ func getbeacons(rpc rpcpb.SliverRPCClient) {
 	}
 }
 
-func getSessions(rpc rpcpb.SliverRPCClient) {
+func GetSessions(rpc rpcpb.SliverRPCClient) {
 
 	sessions, err := rpc.GetSessions(context.Background(), &commonpb.Empty{})
 	if err != nil {
@@ -232,7 +244,7 @@ func getSessions(rpc rpcpb.SliverRPCClient) {
 	}
 }
 
-func runcommandonall(rpc rpcpb.SliverRPCClient, command string, args []string) {
+func RunCommandonAll(rpc rpcpb.SliverRPCClient, command string, args []string) {
 	agents, err := rpc.GetSessions(context.Background(), &commonpb.Empty{})
 	if err != nil {
 		log.Fatal(err)
@@ -255,7 +267,7 @@ func runcommandonall(rpc rpcpb.SliverRPCClient, command string, args []string) {
 	//println(i)
 	runonbeacons(beacons, rpc, command, args)
 }
-func renameall(rpc rpcpb.SliverRPCClient) {
+func RenameAll(rpc rpcpb.SliverRPCClient) {
 	agents, err := rpc.GetSessions(context.Background(), &commonpb.Empty{})
 	if err != nil {
 		log.Fatal(err)
@@ -398,7 +410,7 @@ func renameall(rpc rpcpb.SliverRPCClient) {
 	}
 
 }
-func sendtopwnboard(rpc rpcpb.SliverRPCClient) {
+func SendToPwnBoard(rpc rpcpb.SliverRPCClient, url string) {
 	agents, err := rpc.GetSessions(context.Background(), &commonpb.Empty{})
 	if err != nil {
 		log.Fatal(err)
@@ -426,7 +438,7 @@ func sendtopwnboard(rpc rpcpb.SliverRPCClient) {
 						// 	SessionID: agents.Sessions[i].ID,
 						// 	Name:      name,
 						//})
-						updatepwnBoard(ipaddr)
+						updatepwnBoard(ipaddr, url)
 						//todo upload to pwnboard
 						if err != nil {
 							log.Print("Failed to decode task response: %s\n", err)
@@ -519,7 +531,7 @@ func sendtopwnboard(rpc rpcpb.SliverRPCClient) {
 										// 	Name:     name,
 										// })
 
-										updatepwnBoard(ipaddr)
+										updatepwnBoard(ipaddr, url)
 										if err != nil {
 											log.Print("Failed to decode task response: %s\n", err)
 
@@ -544,6 +556,27 @@ func sendtopwnboard(rpc rpcpb.SliverRPCClient) {
 	}
 
 }
+
+//todo
+// func SendToPwnBoardNoTouch(rpc rpcpb.SliverRPCClient, url string){
+// 	beacons, err := rpc.GetBeacons(context.Background(), &commonpb.Empty{})
+// 	if err != nil {
+// 		log.Fatal(err)
+// 	}
+// 	sessions, err := rpc.GetSessions(context.Background(), &commonpb.Empty{})
+// 	if err != nil {
+// 		log.Fatal(err)
+// 	}
+// 	for i := 0; i < len(sessions.Sessions); i++ {
+// 		if sessions.Sessions[i].IsDead == true  {
+// 			continue
+// 		}
+// 		if sessions.Sessions[i].LastCheckin.Seconds >0 {
+
+// }
+// return
+// }
+// }
 
 func runonbeacons(beacons *clientpb.Beacons, rpc rpcpb.SliverRPCClient, command string, args []string) {
 	taskids := list.New()
@@ -661,7 +694,7 @@ func runcommandon(rpc rpcpb.SliverRPCClient, command string, agent *clientpb.Ses
 	println("Session:" + agent.Hostname)
 	println(string(resp.Stdout) + string(resp.Stderr))
 }
-func runcommandonnew(rpc rpcpb.SliverRPCClient, command string, args []string) {
+func RunCommandOnNew(rpc rpcpb.SliverRPCClient, command string, args []string) {
 	// Open the event stream to be able to collect all events sent by  the server
 	eventStream, err := rpc.Events(context.Background(), &commonpb.Empty{})
 	if err != nil {
