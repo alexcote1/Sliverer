@@ -8,11 +8,11 @@ go get github.com/alexcote1/Sliverer
 ```
 to run 
 ```
-Sliverer command --command="ls" --runonnew=true
+Sliverer pwnboard --url="https://192.2.2.2" 
 ```
 or 
 ```
-Sliverer command --command="ls" 
+Sliverer command --command="bash" --args="-c^ ls" 
 ```
 if you need to specify a config specify its path with 
 ```
