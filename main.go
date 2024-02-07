@@ -88,7 +88,7 @@ func makeBeaconRequest(beacon *clientpb.Beacon) *commonpb.Request {
 func main() {
 	var configPath, argsStr, hostsStr, sessionsStr, pwnboardurl, command string
 	fs := flag.NewFlagSet("fs", flag.ContinueOnError)
-	fs.StringVar(&configPath, "command", "", "command to run")
+	fs.StringVar(&command, "command", "", "command to run")
 	fs.StringVar(&configPath, "config", "", "path to sliver client config file")
 	fs.StringVar(&argsStr, "args", "", "command args")
 	fs.StringVar(&hostsStr, "beacons", "", "runs command on list of beacons")
