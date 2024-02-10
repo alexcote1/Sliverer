@@ -30,32 +30,39 @@ type PwnBoard struct {
 	Type string `json:"type"`
 }
 
-func updatepwnBoard(ip string, url string) {
-	if url == "" {
-		url = "http://127.0.0.1"
+func updatepwnBoard(ip string, urls string) {
+	// Default URL if none is provided
+	if urls == "" {
+		urls = "http://127.0.0.1"
 	}
-	url = url + "/pwn/boxaccess"
-	// Create the struct
-	data := PwnBoard{
-		IPs:  ip,
-		Type: "sliver",
-	}
+	// Split the urls string into a slice of URLs
+	urlList := strings.Split(urls, "^")
 
-	// Marshal the data
-	sendit, err := json.Marshal(data)
-	if err != nil {
-		fmt.Println("\n[-] ERROR SENDING POST:", err)
-		return
-	}
+	for _, url := range urlList {
+		// Append the endpoint to each URL
+		finalUrl := url + "/pwn/boxaccess"
+		// Create the struct
+		data := PwnBoard{
+			IPs:  ip,
+			Type: "sliver",
+		}
 
-	// Send the post to pwnboard
-	resp, err := http.Post(url, "application/json", bytes.NewBuffer(sendit))
-	if err != nil {
-		fmt.Println("[-] ERROR SENDING POST:", err)
-		return
+		// Marshal the data
+		sendit, err := json.Marshal(data)
+		if err != nil {
+			fmt.Println("\n[-] ERROR SENDING POST:", err)
+			continue // Skip this iteration and proceed with the next URL
+		}
+
+		// Send the post to pwnboard
+		resp, err := http.Post(finalUrl, "application/json", bytes.NewBuffer(sendit))
+		if err != nil {
+			fmt.Println("[-] ERROR SENDING POST:", err)
+			continue // Skip this iteration and proceed with the next URL
+		}
+		fmt.Println("POST sent to:", finalUrl, "Status Code:", resp.StatusCode)
+		resp.Body.Close() // Close the response body on each iteration
 	}
-	println(resp.StatusCode)
-	defer resp.Body.Close()
 }
 
 type task struct {
@@ -88,7 +95,7 @@ func makeBeaconRequest(beacon *clientpb.Beacon) *commonpb.Request {
 func main() {
 	var configPath, argsStr, hostsStr, sessionsStr, pwnboardurl, command string
 	fs := flag.NewFlagSet("fs", flag.ContinueOnError)
-	fs.StringVar(&configPath, "command", "", "command to run")
+	fs.StringVar(&command, "command", "", "command to run")
 	fs.StringVar(&configPath, "config", "", "path to sliver client config file")
 	fs.StringVar(&argsStr, "args", "", "command args")
 	fs.StringVar(&hostsStr, "beacons", "", "runs command on list of beacons")
@@ -667,6 +674,7 @@ func runcommandonbeacon(rpc rpcpb.SliverRPCClient, command string, agent *client
 	resp, err := rpc.Execute(context.Background(), &sliverpb.ExecuteReq{
 		Path:    command,
 		Output:  true,
+		Args:    args,
 		Request: makeBeaconRequest(agent),
 	})
 	if err != nil {
