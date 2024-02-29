@@ -387,6 +387,9 @@ func RenameAll(rpc rpcpb.SliverRPCClient) {
 										ipaddr := ifconfig.NetInterfaces[g].IPAddresses[k]
 										ipaddr = strings.Split(ipaddr, "/")[0]
 										name := ipaddr + "_" + (oldval).(task).beacon.Hostname + "."
+										if len(name) > 32 {
+											name = name[:32] // Truncate to the first 32 characters
+										}
 										println(name)
 										_, err := rpc.Rename(context.Background(), &clientpb.RenameReq{
 											BeaconID: (oldval).(task).beacon.ID,
