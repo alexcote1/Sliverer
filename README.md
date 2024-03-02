@@ -4,7 +4,7 @@ runs sliver command on all hosts, partially (or for run on new basically entirel
 
 to install 
 ```
-go get github.com/alexcote1/Sliverer
+go install github.com/alexcote1/Sliverer@latest
 ```
 to run 
 ```
