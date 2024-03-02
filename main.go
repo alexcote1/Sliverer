@@ -291,7 +291,7 @@ func RenameAll(rpc rpcpb.SliverRPCClient) {
 		for g := 0; g < len(ifconfig.NetInterfaces); g++ {
 			if ifconfig.NetInterfaces[g].Name != "lo" {
 				for k := 0; k < len(ifconfig.NetInterfaces[g].IPAddresses); k++ {
-					if !strings.Contains(ifconfig.NetInterfaces[g].IPAddresses[k], ":") && !strings.Contains(ifconfig.NetInterfaces[g].IPAddresses[k], "172.17.0.1") {
+					if !strings.Contains(ifconfig.NetInterfaces[g].IPAddresses[k], ":") && !strings.Contains(ifconfig.NetInterfaces[g].IPAddresses[k], "172.17.0.1") !strings.Contains(ifconfig.NetInterfaces[g].IPAddresses[k], "127.0.0.1") {
 						println(ifconfig.NetInterfaces[g].IPAddresses[k])
 						ipaddr := ifconfig.NetInterfaces[g].IPAddresses[k]
 						ipaddr = strings.Split(ipaddr, "/")[0]
